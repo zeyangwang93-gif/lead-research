@@ -1,0 +1,8 @@
+.env
+icp.json
+results/*
+!results/.gitkeep
+data/eval_set.csv
+__pycache__/
+.idea/
+.venv/

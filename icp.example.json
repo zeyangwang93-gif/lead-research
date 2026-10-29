@@ -1,0 +1,6 @@
+{
+  "our_products": "不锈钢厨房水槽和水龙头，面向中端家装市场，支持 OEM 贴牌",
+  "target_markets": ["Germany", "Poland", "Netherlands"],
+  "target_customer_types": ["importer", "distributor", "wholesaler", "brand"],
+  "exclude": ["生产水槽或水龙头的制造商（竞争对手）", "中国或其他亚洲出口商", "B2B 平台和黄页网站"]
+}
