@@ -5,13 +5,15 @@ from fetcher import Page
 from llm import LLMResult, call_structured
 from schemas import ICP, CompanyProfile, EvidenceCheck
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 SYSTEM_PROMPT = """你是外贸获客分析师。根据提供的公司网站内容，判断这家公司是否是我方的潜在买家，并调用工具记录结果。
 
 规则：
 1. 只依据提供的网页内容判断，不使用外部知识，不猜测。
 2. 没有证据的字段填 null 或 "unknown"，不要编造。
+2a. 品牌商（brand）如果网页没有提到自有工厂或生产基地，视为可能委托生产的采购方，不要因为"可能自己生产"而降分。只有网页明确提到自有工厂时，才按制造商处理。
+2b. 网页明确提到从海外或全球制造商采购、委托生产，都算进口证据。
 3. 业务类型、是否进口、主营产品这三项判断，都要在 evidence 中给出逐字摘录的原文和来源 URL。URL 必须是提供的页面之一。
 4. 评分标准：
    - 80-100：业务类型符合目标客户类型，且有直接证据表明其进口、分销或采购与我方同类或相关的产品
@@ -51,7 +53,8 @@ def verify(profile: CompanyProfile, pages: list[Page]) -> tuple[CompanyProfile, 
         if ev.source_url not in texts:
             check.bad_url += 1
             continue
-        if _norm(ev.quote) not in texts[ev.source_url]:
+        parts = [p for p in re.split(r"…|\.\.\.", _norm(ev.quote)) if p.strip()]
+        if not all(p.strip() in texts[ev.source_url] for p in parts):
             check.quote_not_found += 1
         kept.append(ev)
     profile.evidence = kept

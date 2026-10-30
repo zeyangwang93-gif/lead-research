@@ -1,5 +1,6 @@
 """抓取公司官网：首页 + 按类别挑选的关键子页面（关于我们、产品、联系、贸易合作）。"""
 import re
+import time
 from dataclasses import dataclass, field
 from urllib import robotparser
 from urllib.parse import urldefrag, urljoin, urlparse
@@ -14,7 +15,7 @@ LINK_GROUPS = {
     "about": ["about", "company", "who-we-are", "our-story", "über-uns", "uber-uns", "ueber-uns",
               "unternehmen", "quienes-somos", "empresa", "chi-siamo", "azienda", "a-propos", "qui-sommes"],
     "products": ["product", "produkt", "producto", "prodotti", "produit", "catalog", "brands", "range", "sortiment"],
-    "trade": ["import", "distribut", "wholesale", "sourcing", "partner", "dealer", "händler", "b2b"],
+    "trade": ["import", "distribut", "wholesale", "sourcing", "dealer", "stockist", "händler", "b2b"],
     "contact": ["contact", "kontakt", "contacto", "contatti", "impressum", "imprint"],
 }
 SKIP_EXT = (".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".zip", ".mp4",
@@ -62,12 +63,25 @@ def _get(client, robots, url: str, res: FetchResult) -> tuple[str, str] | None:
     if not robots.can_fetch(config.ROBOTS_AGENT, url):
         res.errors.append(f"robots.txt 禁止抓取: {url}")
         return None
-    try:
-        r = client.get(url)
-        r.raise_for_status()
-    except httpx.HTTPError as e:
-        res.errors.append(f"{url}: {type(e).__name__}")
-        return None
+    for attempt in range(config.FETCH_RETRIES + 1):
+        try:
+            r = client.get(url)
+            # 服务器临时错误或限流：等一下再试
+            if r.status_code in (429, 500, 502, 503, 504) and attempt < config.FETCH_RETRIES:
+                time.sleep(2 * (attempt + 1))
+                continue
+            r.raise_for_status()
+            break
+        except httpx.HTTPStatusError as e:  # 404、403 等，重试没用
+            res.errors.append(f"{url}: HTTP {e.response.status_code}")
+            return None
+        except httpx.TransportError as e:  # 连接失败、超时等网络问题，值得重试
+            if attempt < config.FETCH_RETRIES:
+                time.sleep(2 * (attempt + 1))
+                continue
+            detail = str(e) or repr(e)
+            res.errors.append(f"{url}: {type(e).__name__} - {detail}（已重试 {config.FETCH_RETRIES} 次）")
+            return None
     if "text/html" not in r.headers.get("content-type", ""):
         res.errors.append(f"非 HTML 页面: {url}")
         return None
@@ -88,9 +102,11 @@ def _to_page(url: str, html: str) -> Page:
     return Page(url=url, title=title, text=text[: config.MAX_CHARS_PER_PAGE])
 
 
-def _pick_links(html: str, base_url: str, limit: int) -> list[str]:
+def _pick_links(html: str, base_url: str, limit: int, product_keywords: list[str] | None = None) -> list[str]:
     soup = BeautifulSoup(html, "lxml")
+    kws_product = [k.lower() for k in (product_keywords or []) if k.strip()]
     candidates: dict[str, set[str]] = {}
+    keyword_hits: set[str] = set()
     for a in soup.find_all("a", href=True):
         href = urldefrag(urljoin(base_url, a["href"]))[0]
         if not href.startswith("http") or _host(href) != _host(base_url):
@@ -99,6 +115,9 @@ def _pick_links(html: str, base_url: str, limit: int) -> list[str]:
             continue
         key = (urlparse(href).path + " " + a.get_text(" ", strip=True)).lower().replace(" ", "-")
         groups = {g for g, kws in LINK_GROUPS.items() if any(k in key for k in kws)}
+        if any(k in key for k in kws_product):  # 含我方产品关键词的链接也算产品页
+            groups.add("products")
+            keyword_hits.add(href)
         if groups:
             candidates.setdefault(href, set()).update(groups)
 
@@ -108,13 +127,15 @@ def _pick_links(html: str, base_url: str, limit: int) -> list[str]:
     picked: list[str] = []
     for g in LINK_GROUPS:  # 每类取路径最短的（更可能是栏目页而不是详情页）
         matches = [h for h, gs in candidates.items() if g in gs and h not in picked]
+        if g == "products":  # 产品页优先选含关键词的
+            matches = [h for h in matches if h in keyword_hits] or matches
         if matches:
             picked.append(min(matches, key=depth))
     rest = sorted((h for h in candidates if h not in picked), key=depth)
     return (picked + rest)[:limit]
 
 
-def fetch_site(url: str) -> FetchResult:
+def fetch_site(url: str, product_keywords: list[str] | None = None) -> FetchResult:
     url = normalize_url(url)
     res = FetchResult()
     headers = {"User-Agent": config.USER_AGENT, "Accept-Language": "en;q=0.9,*;q=0.5"}
@@ -125,7 +146,7 @@ def fetch_site(url: str) -> FetchResult:
             return res
         final_url, html = home
         res.pages.append(_to_page(final_url, html))
-        for link in _pick_links(html, final_url, config.MAX_PAGES - 1):
+        for link in _pick_links(html, final_url, config.MAX_PAGES - 1, product_keywords):
             got = _get(client, robots, link, res)
             if got:
                 res.pages.append(_to_page(*got))

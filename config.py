@@ -12,6 +12,7 @@ MAX_CHARS_PER_PAGE = int(os.getenv("MAX_CHARS_PER_PAGE", "4000"))
 REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "15"))
 USER_AGENT = "Mozilla/5.0 (compatible; LeadResearchBot/0.1)"
 ROBOTS_AGENT = "LeadResearchBot"
+FETCH_RETRIES = int(os.getenv("FETCH_RETRIES", "2"))
 
 PRICE_INPUT = float(os.getenv("PRICE_INPUT_PER_MTOK", "0"))
 PRICE_OUTPUT = float(os.getenv("PRICE_OUTPUT_PER_MTOK", "0"))

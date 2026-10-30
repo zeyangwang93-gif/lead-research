@@ -13,6 +13,7 @@ class ICP(BaseModel):
     target_markets: list[str]
     target_customer_types: list[str]
     exclude: list[str] = []
+    product_keywords: list[str] = []
 
 
 class Evidence(BaseModel):

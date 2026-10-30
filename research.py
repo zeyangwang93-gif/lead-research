@@ -15,7 +15,7 @@ def research_company(url: str, icp: ICP, model: str | None = None) -> ResearchRe
     url = normalize_url(url)
     result = ResearchResult(url=url)
     try:
-        fetched = fetch_site(url)
+        fetched = fetch_site(url, icp.product_keywords)
         result.pages_fetched = [p.url for p in fetched.pages]
         result.contact_emails = sorted(fetched.emails)
         result.fetch_errors = fetched.errors
