@@ -1,6 +1,12 @@
 {
-  "our_products": "不锈钢厨房水槽和水龙头，面向中端家装市场，支持 OEM 贴牌",
-  "target_markets": ["Germany", "Poland", "Netherlands"],
-  "target_customer_types": ["importer", "distributor", "wholesaler", "brand"],
-  "exclude": ["生产水槽或水龙头的制造商（竞争对手）", "中国或其他亚洲出口商", "B2B 平台和黄页网站"]
+  "our_products": "户外露营帐篷，包括家庭帐篷、充气帐篷、自动速开帐篷，支持 OEM 贴牌和定制",
+  "target_markets": ["Germany", "United Kingdom", "Netherlands", "Poland"],
+  "target_customer_types": ["importer", "distributor", "wholesaler", "brand", "retailer"],
+  "exclude": [
+    "生产帐篷的制造商（竞争对手）",
+    "中国或其他亚洲出口商",
+    "B2B 平台和黄页网站",
+    "只做帐篷租赁或活动搭建服务的公司"
+  ],
+  "product_keywords": ["tent", "zelt", "namiot"]
 }
