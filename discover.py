@@ -5,6 +5,7 @@ import sys
 import csv
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -14,6 +15,8 @@ from pydantic import BaseModel
 import config
 import llm
 import search as search_mod
+from research import load_icp, research_company
+from schemas import ICP
 
 OUT_DIR = Path("data/discovered")
 EVAL_SET = Path("data/eval_set.csv")
@@ -28,6 +31,9 @@ BLOCKED_DOMAINS = [
     "quora.com", "medium.com", "google.com", "bing.com", "yelp.com", "tripadvisor.com",
     "allegro.pl", "ceneo.pl", "bol.com", "idealo.de", "kelkoo.com", "geizhals.de",
     "europages.com", "kompass.com", "indiamart.com", "tradekey.com", "ec21.com",
+    "rocketreach.co", "tracxn.com", "leadiq.com", "zoominfo.com", "cbinsights.com", "mapquest.com",
+    "bbb.org", "pricespy.co.uk", "pricerunner.com", "finance.yahoo.com", "cnbc.com",
+    "businessinsider.com", "which.co.uk",
 ]
 
 
@@ -82,13 +88,8 @@ def write_csv(path: Path, fields: list[str], rows: list[dict]):
         w.writerows(rows)
 
 
-def main():
-    sys.stdout.reconfigure(encoding="utf-8")  # Windows 控制台默认 gbk，打印德语/波兰语会报错
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--icp", default="icp.json")
-    args = ap.parse_args()
-    icp = json.loads(Path(args.icp).read_text(encoding="utf-8"))
-
+def run_search(icp: dict, ts: str) -> dict:
+    """第一步：生成搜索词、搜索、去重、过滤，写 queries/candidates 文件。"""
     queries, in_tok, out_tok = generate_queries(icp, config.DISCOVER_NUM_QUERIES)
     print(f"生成搜索词 {len(queries)} 个（tokens: in={in_tok}, out={out_tok}）")
 
@@ -135,7 +136,6 @@ def main():
         })
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     write_csv(OUT_DIR / f"queries_{ts}.csv",
               ["query", "language", "angle", "results", "new_domains_after_filter"], query_rows)
     write_csv(OUT_DIR / f"candidates_{ts}.csv",
@@ -147,6 +147,168 @@ def main():
     hit = [r["domain"] for r in rows if r["in_eval_set"] != ""]
     print(f"命中标注集 {len(hit)} 个：{', '.join(hit)}")
     print(f"输出：{OUT_DIR}/queries_{ts}.csv, candidates_{ts}.csv")
+    return {"rows": rows, "search_calls": search_calls, "query_in": in_tok, "query_out": out_tok}
+
+
+
+# ---------------- 第二步：初筛 + 深度调研 ----------------
+PRESCREEN_LABELS = ("likely_customer", "excluded", "irrelevant", "unsure")
+PASS_LABELS = ("likely_customer", "unsure")  # 进入深度调研
+
+
+class PrescreenItem(BaseModel):
+    domain: str
+    label: str   # likely_customer / excluded / irrelevant / unsure
+    reason: str  # 一句中文理由
+
+
+class PrescreenBatch(BaseModel):
+    items: list[PrescreenItem]
+
+
+def load_candidates(path: str) -> list[dict]:
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        rows = [r for r in csv.DictReader(f) if r.get("domain")]
+    for r in rows:
+        r["hit_count"] = int(r.get("hit_count") or 0)
+    return rows
+
+
+def _prescreen_batch(icp: dict, batch: list[dict]) -> tuple[list[dict], int, int]:
+    system = "你是外贸获客研究员，负责根据搜索结果的域名、标题和摘要，快速判断一个网站是否值得深入调研。"
+    listing = "\n".join(
+        f"{i}. 域名: {c['domain']}\n   标题: {c['title']}\n   摘要: {c['snippet'][:300]}"
+        for i, c in enumerate(batch, 1))
+    user = (
+        f"客户画像（JSON）：\n{json.dumps(icp, ensure_ascii=False, indent=2)}\n\n"
+        "下面是搜索得到的候选网站。只根据域名、标题、摘要判断，给每个网站一个分类：\n"
+        "- likely_customer：看起来是目标市场的户外/露营品牌商、零售商、批发商或进口商\n"
+        "- excluded：明显命中画像的排除条件（制造商/工厂、亚洲出口商、租赁公司、B2B 平台等）\n"
+        "- irrelevant：不是公司官网（新闻、博客、评测、比价、企业信息库、黄页等）\n"
+        "- unsure：信息不足，无法判断\n"
+        "每个网站给一句简短中文理由。domain 必须与输入完全一致，每个网站都要返回一项。\n\n" + listing)
+    last_err = None
+    for _ in range(2):  # 解析失败重试一次
+        try:
+            r = llm.call_structured(system, user, "submit_prescreen", "提交初筛结果",
+                                    PrescreenBatch.model_json_schema(), max_tokens=4000)
+            items = PrescreenBatch.model_validate(r.data).items
+            return [i.model_dump() for i in items], r.input_tokens, r.output_tokens
+        except Exception as e:
+            last_err = e
+    print(f"初筛批次失败：{last_err}")
+    return [], 0, 0
+
+
+def prescreen(icp: dict, cands: list[dict], batch_size: int, workers: int) -> tuple[int, int]:
+    """原地给 cands 加 prescreen_label / prescreen_reason，返回 (input_tokens, output_tokens)。"""
+    batches = [cands[i:i + batch_size] for i in range(0, len(cands), batch_size)]
+    with ThreadPoolExecutor(workers) as ex:
+        outs = list(ex.map(lambda b: _prescreen_batch(icp, b), batches))
+    in_tok = out_tok = 0
+    for batch, (items, i_t, o_t) in zip(batches, outs):
+        in_tok += i_t
+        out_tok += o_t
+        by_domain = {it["domain"].lower(): it for it in items}
+        for c in batch:
+            it = by_domain.get(c["domain"].lower())
+            if it and it["label"] in PRESCREEN_LABELS:
+                c["prescreen_label"], c["prescreen_reason"] = it["label"], it["reason"]
+            else:  # 模型漏掉或标签非法：保守地交给深度调研
+                c["prescreen_label"], c["prescreen_reason"] = "unsure", "初筛未返回有效结果"
+    return in_tok, out_tok
+
+
+def research_all(icp: ICP, cands: list[dict], workers: int) -> None:
+    with ThreadPoolExecutor(workers) as ex:
+        results = list(ex.map(lambda c: research_company(c["homepage"], icp), cands))
+    for c, res in zip(cands, results):
+        c["result"] = res
+
+
+def lead_row(c: dict) -> dict:
+    res, p = c.get("result"), None
+    p = res.profile if res else None
+    return {
+        "domain": c["domain"], "homepage": c["homepage"],
+        "prescreen_label": c["prescreen_label"], "prescreen_reason": c["prescreen_reason"],
+        "score": p.match_score if p else "",
+        "business_type": p.business_type if p else "",
+        "confidence": p.confidence if p else "",
+        "country": (p.country or "") if p else "",
+        "reasons": " | ".join(p.match_reasons) if p else "",
+        "emails": " ".join(res.contact_emails) if res else "",
+        "error": (res.error or "") if res else "",
+    }
+
+
+def main():
+    sys.stdout.reconfigure(encoding="utf-8")  # Windows 控制台默认 gbk，打印德语/波兰语会报错
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--icp", default="icp.json")
+    ap.add_argument("--candidates", help="已有的 candidates_*.csv；给了就跳过搜索")
+    ap.add_argument("--max-research", type=int, default=30, help="最多深度调研多少家（按 hit_count 从高到低）")
+    ap.add_argument("--threshold", type=int, default=60, help="评分 >= 阈值视为潜在客户")
+    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--batch-size", type=int, default=20, help="初筛每批处理的候选数")
+    args = ap.parse_args()
+    icp_dict = json.loads(Path(args.icp).read_text(encoding="utf-8"))
+    icp = load_icp(args.icp)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    search_calls = q_in = q_out = 0
+    if args.candidates:
+        cands = load_candidates(args.candidates)
+        before = len(cands)
+        cands = [c for c in cands if not is_blocked(c["domain"])]  # 套用最新的过滤名单
+        print(f"读取候选 {before} 个，按当前过滤名单去掉 {before - len(cands)} 个，剩 {len(cands)} 个")
+    else:
+        out = run_search(icp_dict, ts)
+        cands, search_calls, q_in, q_out = out["rows"], out["search_calls"], out["query_in"], out["query_out"]
+        for c in cands:
+            c["hit_count"] = int(c["hit_count"])
+
+    # 初筛
+    p_in, p_out = prescreen(icp_dict, cands, args.batch_size, args.workers)
+    counts = {l: sum(c["prescreen_label"] == l for c in cands) for l in PRESCREEN_LABELS}
+    print("\n=== 初筛 ===")
+    for l in PRESCREEN_LABELS:
+        print(f"{l}: {counts[l]}")
+
+    # 深度调研（hit_count 从高到低，sorted 稳定，同分保持原顺序）
+    passed = sorted([c for c in cands if c["prescreen_label"] in PASS_LABELS],
+                    key=lambda c: -c["hit_count"])
+    to_research = passed[:args.max_research]
+    print(f"\n通过初筛 {len(passed)} 个，调研前 {len(to_research)} 个 ...")
+    research_all(icp, to_research, args.workers)
+
+    ok = [c for c in to_research if c["result"].profile]
+    failed = len(to_research) - len(ok)
+    hits = [c for c in ok if c["result"].profile.match_score >= args.threshold]
+    r_in = sum(c["result"].input_tokens for c in to_research)
+    r_out = sum(c["result"].output_tokens for c in to_research)
+
+    # 输出：调研过的按分数从高到低，其后是未调研的候选
+    def sort_key(c):
+        res = c.get("result")
+        return -(res.profile.match_score) if res and res.profile else 1
+    researched = sorted(to_research, key=sort_key)
+    rest = [c for c in cands if "result" not in c]
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / f"leads_{ts}.csv"
+    write_csv(path, ["domain", "homepage", "prescreen_label", "prescreen_reason", "score", "business_type",
+                     "confidence", "country", "reasons", "emails", "error"],
+              [lead_row(c) for c in researched + rest])
+
+    total_tok = q_in + q_out + p_in + p_out + r_in + r_out
+    print("\n=== 结果 ===")
+    print(f"调研 {len(to_research)} 家：成功 {len(ok)}，失败 {failed}")
+    print(f"{args.threshold} 分以上：{len(hits)} 家" + (f"（命中率 {len(hits) / len(ok):.0%}）" if ok else ""))
+    print(f"成本：搜索调用 {search_calls} 次；搜索词 tokens in={q_in}/out={q_out}；"
+          f"初筛 tokens in={p_in}/out={p_out}；调研 tokens in={r_in}/out={r_out}；总计 {total_tok}")
+    if hits:
+        print(f"平均每个 {args.threshold}+ 客户用 {total_tok // len(hits)} tokens")
+    print(f"输出：{path}")
 
 
 if __name__ == "__main__":
