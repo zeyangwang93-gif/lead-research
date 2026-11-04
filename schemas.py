@@ -53,5 +53,6 @@ class ResearchResult(BaseModel):
     model: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    llm_attempts: int = 0  # 模型调用次数，0 表示没调用过
     cost: float = 0.0
     latency_s: float = 0.0

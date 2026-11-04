@@ -1,9 +1,12 @@
 """调用 LLM 分析网页内容，并对结果做事后核验。"""
 import re
+import time
+from pathlib import Path
 
 from pydantic import ValidationError
 
-from fetcher import Page
+import config
+from fetcher import Page, _host
 from llm import LLMOutputError, LLMResult, call_structured
 from schemas import ICP, CompanyProfile, EvidenceCheck
 
@@ -63,19 +66,44 @@ def verify(profile: CompanyProfile, pages: list[Page]) -> tuple[CompanyProfile, 
     return profile, check
 
 
+def _save_raw(url: str, err: LLMOutputError, attempt: int) -> None:
+    path = Path("results/raw") / f"{_host(url)}_{time.strftime('%Y%m%d_%H%M%S')}_try{attempt}.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"网址: {url}\n第几次调用: {attempt}\nfinish_reason: {err.finish_reason}\n输出 token 数: {err.output_tokens}\n"
+        f"报错信息: {err.summary}\n\n原始文本:\n{err.raw_text}\n", encoding="utf-8")
+
+
 def analyze(icp: ICP, pages: list[Page], model: str | None = None
             ) -> tuple[CompanyProfile, EvidenceCheck, LLMResult]:
-    llm = call_structured(
-        system=SYSTEM_PROMPT,
-        user=build_user_prompt(icp, pages),
-        tool_name="record_company_profile",
-        tool_desc="记录对这家公司的结构化分析结果",
-        schema=CompanyProfile.model_json_schema(),
-        model=model,
-    )
-    try:
-        profile = CompanyProfile.model_validate(llm.data)
-    except ValidationError as e:
-        raise LLMOutputError(f"ValidationError: {e}", llm.raw_text, llm.finish_reason, llm.output_tokens) from e
+    user = build_user_prompt(icp, pages)
+    in_tok = out_tok = 0  # 累计所有尝试的 token
+    for attempt in range(1, config.LLM_RETRIES + 2):
+        try:
+            llm = call_structured(
+                system=SYSTEM_PROMPT,
+                user=user,
+                tool_name="record_company_profile",
+                tool_desc="记录对这家公司的结构化分析结果",
+                schema=CompanyProfile.model_json_schema(),
+                model=model,
+            )
+            try:
+                profile = CompanyProfile.model_validate(llm.data)
+            except ValidationError as e:
+                raise LLMOutputError(f"ValidationError: {e}", llm.raw_text, llm.finish_reason,
+                                     llm.output_tokens, llm.input_tokens) from e
+        except LLMOutputError as e:
+            in_tok += e.input_tokens
+            out_tok += e.output_tokens
+            _save_raw(pages[0].url, e, attempt)
+            if attempt > config.LLM_RETRIES:
+                e.attempts, e.total_input_tokens, e.total_output_tokens = attempt, in_tok, out_tok
+                raise
+            continue
+        in_tok += llm.input_tokens
+        out_tok += llm.output_tokens
+        llm.input_tokens, llm.output_tokens, llm.attempts = in_tok, out_tok, attempt
+        break
     profile, check = verify(profile, pages)
     return profile, check, llm

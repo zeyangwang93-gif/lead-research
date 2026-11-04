@@ -11,14 +11,6 @@ from llm import LLMOutputError
 from schemas import ICP, ResearchResult
 
 
-def _save_raw(url: str, err: LLMOutputError) -> None:
-    path = Path("results/raw") / f"{_host(url)}_{time.strftime('%Y%m%d_%H%M%S')}.txt"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        f"网址: {url}\nfinish_reason: {err.finish_reason}\n输出 token 数: {err.output_tokens}\n"
-        f"报错信息: {err.summary}\n\n原始文本:\n{err.raw_text}\n", encoding="utf-8")
-
-
 def research_company(url: str, icp: ICP, model: str | None = None) -> ResearchResult:
     t0 = time.time()
     url = normalize_url(url)
@@ -37,10 +29,14 @@ def research_company(url: str, icp: ICP, model: str | None = None) -> ResearchRe
             result.model = llm.model
             result.input_tokens = llm.input_tokens
             result.output_tokens = llm.output_tokens
+            result.llm_attempts = llm.attempts
             result.cost = config.estimate_cost(llm.input_tokens, llm.output_tokens)
-    except LLMOutputError as e:  # 保存原始输出，用来诊断格式问题
-        result.error = f"{e.summary.splitlines()[0]} (finish_reason={e.finish_reason})"
-        _save_raw(url, e)
+    except LLMOutputError as e:  # 重试耗尽仍失败；每次失败的原始输出已在 analyze 里保存
+        result.error = f"{e.summary.splitlines()[0]} (finish_reason={e.finish_reason}，共调用 {e.attempts} 次)"
+        result.llm_attempts = e.attempts
+        result.input_tokens = e.total_input_tokens
+        result.output_tokens = e.total_output_tokens
+        result.cost = config.estimate_cost(e.total_input_tokens, e.total_output_tokens)
     except Exception as e:  # 批量运行时单条失败不应中断整体
         result.error = f"{type(e).__name__}: {e}"
     result.latency_s = round(time.time() - t0, 2)

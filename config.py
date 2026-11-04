@@ -6,6 +6,7 @@ load_dotenv()
 PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")  # anthropic | openai_compat
 MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5-5")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL") or None
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0"))  # 越低输出越稳定
 
 MAX_PAGES = int(os.getenv("MAX_PAGES", "5"))
 MAX_CHARS_PER_PAGE = int(os.getenv("MAX_CHARS_PER_PAGE", "4000"))
@@ -13,6 +14,7 @@ REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "15"))
 USER_AGENT = "Mozilla/5.0 (compatible; LeadResearchBot/0.1)"
 ROBOTS_AGENT = "LeadResearchBot"
 FETCH_RETRIES = int(os.getenv("FETCH_RETRIES", "2"))
+LLM_RETRIES = int(os.getenv("LLM_RETRIES", "2"))  # 模型输出解析失败后的重试次数（不含第一次调用）
 
 PRICE_INPUT = float(os.getenv("PRICE_INPUT_PER_MTOK", "0"))
 PRICE_OUTPUT = float(os.getenv("PRICE_OUTPUT_PER_MTOK", "0"))

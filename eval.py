@@ -57,6 +57,7 @@ def main():
             "pages": len(res.pages_fetched), "emails": " ".join(res.contact_emails),
             "error": res.error or "", "notes": row.get("notes", ""),
             "tokens_in": res.input_tokens, "tokens_out": res.output_tokens,
+            "llm_attempts": res.llm_attempts,
             "cost": res.cost, "latency_s": res.latency_s,
         })
 
@@ -73,6 +74,8 @@ def main():
     print(f"TP={tp} FP={fp} FN={fn} TN={tn}")
     print(f"引用可核验率 {1 - ev_bad / ev_total:.1%}" if ev_total else "引用可核验率 N/A")
     print(f"平均 tokens 输入 {avg([r.input_tokens for r in ok]):.0f} / 输出 {avg([r.output_tokens for r in ok]):.0f}")
+    called = [r.llm_attempts for r in results if r.llm_attempts]
+    print(f"用到重试的公司数 {sum(a > 1 for a in called)}  平均调用次数 {avg(called):.2f}")
     print(f"平均成本 {avg([r.cost for r in ok]):.4f}  平均耗时 {avg([r.latency_s for r in results]):.1f}s")
 
     out = Path("results") / f"eval_{args.tag}_{time.strftime('%Y%m%d_%H%M%S')}.csv"
