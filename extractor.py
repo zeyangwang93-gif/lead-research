@@ -1,8 +1,10 @@
 """调用 LLM 分析网页内容，并对结果做事后核验。"""
 import re
 
+from pydantic import ValidationError
+
 from fetcher import Page
-from llm import LLMResult, call_structured
+from llm import LLMOutputError, LLMResult, call_structured
 from schemas import ICP, CompanyProfile, EvidenceCheck
 
 PROMPT_VERSION = "v2"
@@ -71,6 +73,9 @@ def analyze(icp: ICP, pages: list[Page], model: str | None = None
         schema=CompanyProfile.model_json_schema(),
         model=model,
     )
-    profile = CompanyProfile.model_validate(llm.data)
+    try:
+        profile = CompanyProfile.model_validate(llm.data)
+    except ValidationError as e:
+        raise LLMOutputError(f"ValidationError: {e}", llm.raw_text, llm.finish_reason, llm.output_tokens) from e
     profile, check = verify(profile, pages)
     return profile, check, llm

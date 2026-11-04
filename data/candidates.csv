@@ -1,0 +1,47 @@
+﻿url,company,country,category,description,source,hard_case
+https://skandika.com,Skandika,德国,品牌商,德国户外与健身产品品牌，官网网店设有帐篷分类和公司介绍页。,搜索“Zeltmarken Outdoor Marken Deutschland Zelte Hersteller Händler Liste”结果中的品牌名,no
+https://www.tatonka.com,Tatonka,德国,品牌商,德国户外品牌，官网产品包括背包、帐篷、户外装备和功能服装。,模型已有知识中的公司名，访问官网核实,no
+https://www.jack-wolfskin.com,Jack Wolfskin,德国,品牌商,德国户外品牌，官网以服装、鞋和装备为主，装备中包含帐篷。,模型已有知识中的公司名，访问官网核实,yes
+https://www.vaude.com,VAUDE,德国,品牌商,德国户外品牌，官网产品包括服装、背包、自行车包，并有帐篷类目。,模型已有知识中的公司名，访问官网核实,yes
+https://campus.com.pl,CampuS,波兰,品牌商,波兰户外品牌，官网自称生产商，设有帐篷分类和品牌介绍页。,搜索“polska marka sprzętu turystycznego namioty kempingowe producent…”,no
+https://spokey.pl,Spokey,波兰,品牌商,波兰运动器材品牌，官网以健身、滑板、滑轮为主，另设有帐篷分类，抓取时没有公司介绍页。,模型已有知识中的公司名，访问官网核实,yes
+https://sunncamp.co.uk,Sunncamp,英国,品牌商,英国露营品牌，官网设有帐篷和天幕分类及门店查询页，抓取时没有公司介绍页。,模型已有知识中的公司名，访问官网核实,yes
+https://bo-camp.com,Bo-Camp,荷兰,品牌商,荷兰露营与户外品牌，官网产品以露营家具和配件为主，设有帐篷与遮阳分类，抓取时没有公司介绍页。,模型已有知识中的公司名，访问官网核实,yes
+https://www.travellife.eu,Travellife,荷兰,品牌商,荷兰露营品牌（官网称属于 Gimeg），产品为露营家具、遮阳篷、帐篷和配件。,模型已有知识中的公司名，访问官网核实,no
+https://www.regatta.com,Regatta,英国,品牌商,英国户外服装品牌，官网描述里提到步行靴和帐篷，首页帐篷相关词很少。,模型已有知识中的公司名，访问官网核实,yes
+https://www.trespass.com,Trespass,英国,品牌商,英国户外服装、鞋和装备品牌，首页含帐篷相关词，主品类是服装。,模型已有知识中的公司名，访问官网核实,yes
+https://mql.co.uk,Miriad Quest Leisure,英国,进口商或批发商,官网自称向户外休闲行业供货，设有帐篷与天幕分类、品牌总览页和联系页。,搜索“UK wholesale camping equipment trade supplier tents trade account retailers”,no
+https://www.ocs-recreatie.nl,OCS Recreatie Groothandel,荷兰,进口商或批发商,荷兰露营车与房车配件批发商，官网自称有 60 多年历史，设有帐篷与遮阳篷分类。,搜索“groothandel kampeerartikelen tenten dealers…”，荷兰 SBI 46493 露营用品批发名录,no
+https://www.reimo.com,REIMO,德国,进口商或批发商,德国露营与房车配件商，官网称有 2 万多件商品，设有经销商查询页，首页未见帐篷字样。,模型已有知识中的公司名，访问官网核实,yes
+https://www.gooutdoors.co.uk,GO Outdoors,英国,户外零售连锁,英国户外零售商，官网首页有露营、户外服装分类，设有家庭帐篷分类。,搜索“UK camping tent brands list family tents distributor”，英国零售商品牌列表页,no
+https://www.cotswoldoutdoor.com,Cotswold Outdoor,英国,户外零售连锁,英国户外服装与装备零售商，官网售卖户外装备并含帐篷相关内容。,模型已有知识中的公司名，访问官网核实,no
+https://www.norwichcamping.co.uk,Norwich Camping & Leisure,英国,户外零售连锁,英国露营用品零售商，官网按品牌和类型列出大量帐篷。,搜索“UK camping tent brands list family tents distributor”，英国零售商品牌列表页,no
+https://www.tiso.com,Tiso,英国,户外零售连锁,英国户外零售商，官网售卖户外服装、露营装备、骑行和攀岩装备。,搜索“UK camping tent brands list family tents distributor”，英国零售商品牌列表页,no
+https://www.fritz-berger.de,Fritz Berger,德国,户外零售连锁,德国露营用品零售商，搜索结果称有 100 多家门店，另设面向出口的批发部门。,搜索“Großhandel Camping Outdoor Zelte Importeur Händler Anfrage B2B Deutschland”,no
+https://www.bergfreunde.de,Bergfreunde,德国,户外零售连锁,德国户外网店，官网有 5 至 6 人帐篷等分类，销售品牌多。,搜索“Zelte Hersteller Deutschland Familienzelte Marke Fachhandel…”，零售商品牌列表页,no
+https://www.obelink.nl,Obelink,荷兰,户外零售连锁,"荷兰露营用品零售商，搜索结果称 Winterswijk 门店面积 72,500 平方米，官网有大量帐篷。",搜索“tenten merken Nederland kamperen groothandel importeur outdoor”，kampeermeneer.nl 露营店列表,no
+https://www.bever.nl,Bever,荷兰,户外零售连锁,荷兰户外零售商，官网自称是荷兰的户外商店，帐篷不是首页主要内容。,模型已有知识中的公司名，访问官网核实,yes
+https://www.vrijbuiter.nl,Vrijbuiter,荷兰,户外零售连锁,荷兰露营与户外运动零售商，搜索结果称有自有品牌 Falco，官网有大量帐篷。,搜索“tenten merken Nederland kamperen groothandel importeur outdoor”，kampeermeneer.nl 露营店列表,no
+https://www.4camping.pl,4camping,波兰,户外零售连锁,波兰户外与旅游装备网店，官网首页有帐篷类商品。,搜索“hurtownia namiotów turystycznych hurt dla sklepów sprzęt kempingowy B2B”,no
+https://www.wypad.com.pl,WYPAD,波兰,户外零售连锁,波兰旅游、登山和户外网店，官网首页有帐篷类商品。,搜索“sieć sklepów turystycznych outdoor Polska namioty ranking sklepów”,no
+https://www.naturehike.com,Naturehike,中国,亚洲帐篷工厂,中国户外品牌，官网销售多个系列的帐篷，并设有分销商页。,搜索“namioty kempingowe marki dystrybutor Polska hurtownia sprzęt outdoor”结果中出现其波兰站；官网核实,yes
+https://www.kingcamp.com,KingCamp,中国,亚洲帐篷工厂,中国户外品牌，官网产品包括露营椅和帐篷。,模型已有知识中的公司名，访问官网核实,yes
+https://www.blackdeer.com,Blackdeer,中国,亚洲帐篷工厂,中国户外品牌，官网销售帐篷等露营装备。,模型已有知识中的公司名，访问官网核实,yes
+https://mobigarden.com,Mobi Garden,中国,亚洲帐篷工厂,中国户外品牌，官网自称为横断山区设计户外装备，生产帐篷、睡垫和露营椅。,模型已有知识中的公司名，访问官网核实,yes
+https://wechsel-tents.de,Wechsel Tents,德国,欧洲帐篷制造商,德国帐篷品牌，官网销售轻量化帐篷、徒步帐篷和户外装备。,模型已有知识中的公司名，访问官网核实,yes
+https://heimplanet.com,HEIMPLANET,德国,欧洲帐篷制造商,德国帐篷品牌，官网为官方网店，页面内容以帐篷为主。,模型已有知识中的公司名，访问官网核实,yes
+https://tortuga-zelte.de,Tortuga-Zelte,德国,欧洲帐篷制造商,德国博登湖地区帐篷厂，官网自称生产黑白棉布团体帐篷和营地帐篷，也在线销售。,搜索“Großhandel Camping Outdoor Zelte Importeur Händler Anfrage B2B Deutschland”（出现 Tortuga GmbH）；官网核实,yes
+https://www.vitabri.pl,VITABRI,波兰,欧洲帐篷制造商,波兰促销与展会帐篷制造商，官网称其快开帐篷可在 30 秒内展开。,搜索“polska marka sprzętu turystycznego namioty kempingowe producent…”,no
+https://www.made-in-china.com,Made-in-China.com,中国,B2B平台和黄页网站,中国供应商与产品目录平台。,搜索“camping tent manufacturer China OEM ODM…”结果中出现的平台,no
+https://www.alibaba.com,Alibaba.com,中国,B2B平台和黄页网站,国际贸易 B2B 平台，列有制造商、供应商和买家。,搜索“Großhandel Camping Outdoor Zelte Importeur…”结果中提到该平台，访问官网核实,no
+https://www.lieferanten.de,Lieferanten.de,德国,B2B平台和黄页网站,德国供应商搜索平台，可向多个供应商同时发询盘。,搜索“Großhandel Camping Outdoor Zelte Importeur…”结果中出现的B2B目录,no
+https://lowa.com,LOWA,德国,户外行业但不卖帐篷的公司,德国户外鞋品牌，官网自称自 1923 年起做鞋。,模型已有知识中的公司名，访问官网核实,no
+https://meindl.de,Meindl,德国,户外行业但不卖帐篷的公司,德国登山、运动和户外鞋品牌，官网自称 Lukas Meindl GmbH & Co. KG。,模型已有知识中的公司名，访问官网核实,no
+https://www.deuter.com,Deuter,德国,户外行业但不卖帐篷的公司,德国背包与睡袋品牌，官网产品为背包、睡袋和包类。,模型已有知识中的公司名，访问官网核实,yes
+https://lowealpine.com,Lowe Alpine,英国,户外行业但不卖帐篷的公司,英国背包品牌，官网产品为徒步、登山和旅行背包。,模型已有知识中的公司名，访问官网核实,yes
+https://www.craghoppers.com,Craghoppers,英国,户外行业但不卖帐篷的公司,英国徒步与探险服装品牌，官网产品为服装和装备。,模型已有知识中的公司名，访问官网核实,yes
+https://www.stretchandtents.co.uk,Stretch & Tents,英国,帐篷租赁或活动搭建公司,伦敦的弹力帐篷租赁公司，服务全英国，官网提供采暖、照明和装饰。,搜索“marquee hire UK event tent hire company stretch tents”结果中的公司名，访问官网,no
+https://zeltverleih-pautz.de,Zeltverleih Heinz Pautz,德国,帐篷租赁或活动搭建公司,柏林与勃兰登堡的帐篷租赁公司，出租节庆帐篷、派对帐篷、展会帐篷和仓储帐篷，并提供餐饮和配件。,搜索“Zeltverleih Eventzelte mieten Festzelt Vermietung Deutschland”结果中的公司名，访问官网,no
+https://www.ortenauer-zeltverleih.de,Ortenauer Zeltverleih,德国,帐篷租赁或活动搭建公司,奥特瑙地区的节庆与派对帐篷租赁公司，面向私人和商务活动。,搜索“Zeltverleih Eventzelte mieten Festzelt Vermietung Deutschland”结果中的公司名，访问官网,no
+https://www.vanhamtenten.com,Van Ham Tenten & Podia,荷兰,帐篷租赁或活动搭建公司,荷兰出租活动用帐篷、舞台和地板，官网自称有 45 年经验。,搜索“partytent verhuur evenementen tenten huren Nederland”结果中的公司名，访问官网,no
+https://namiotyimprezowe.pl,Namioty Imprezowe,波兰,帐篷租赁或活动搭建公司,华沙及周边的派对帐篷租赁公司，面向婚礼、户外活动和企业活动。,搜索“wynajem namiotów eventowych…”确认存在此类公司，网址为猜测域名后访问核实,no

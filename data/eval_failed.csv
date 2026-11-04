@@ -1,0 +1,7 @@
+url,label,notes
+https://www.jack-wolfskin.com,1,德国户外品牌商，有帐篷产品，未见自有工厂
+https://www.trespass.com,1,英国品牌商，有帐篷，未见自有工厂
+https://www.fritz-berger.de,1,德国户外零售连锁，有帐篷，未见自有工厂
+https://www.lieferanten.de,0,德国B2B供应商搜索平台，撮合采购员和供应商，自身不采购，排除
+https://www.ortenauer-zeltverleih.de,0,德国活动帐篷租赁公司，出租节庆和派对帐篷，品类与露营帐篷不同，排除
+https://www.vanhamtenten.com,0,荷兰租活动帐篷的

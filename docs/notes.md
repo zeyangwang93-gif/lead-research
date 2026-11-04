@@ -108,3 +108,145 @@ Vango 是英国户外帐篷品牌，品牌商通常委托工厂生产，预期�
   1. 提取文本前先去掉 nav、header、footer 标签，优先取 main 或 article 区域。
   2. 先查看 About 页被截断前后的原始文本，确认正文是否真的缺失，再决定要不要上 JavaScript 渲染（如 Playwright）。
   3. 用标注集批量验证，而不是只看 Vango 一个案例。
+
+## 2026-11-02 正式基线评估：v2-full
+
+### 1. 评估设置
+- 标注集：46 家（25 正 21 负），人工逐个核实官网后标注，文件 `data/eval_set.csv`。
+- 模型：deepseek-chat；prompt：v2；阈值：60 分（≥60 判为 1）。
+- 结果文件：`results/eval_v2-full_20261102_145953.csv`。
+- 说明：Wechsel、Heimplanet 在候选名单里归为"欧洲帐篷制造商"，核实官网后按"委托生产的品牌商"标为 1，以标注集为准。
+
+### 2. 结果
+
+| 指标 | 数值 |
+| --- | --- |
+| 样本 | 46 |
+| 成功 / 失败 | 39 / 7（失败率 15.2%） |
+| 准确率 | 84.6% |
+| 精确率 | 94.4% |
+| 召回率 | 77.3% |
+| TP / FP / FN / TN | 17 / 1 / 5 / 16 |
+| 引用可核验率 | 95.9% |
+| 平均 tokens | 输入 5962 / 输出 672 |
+| 平均成本 | 未统计（.env 未填价格） |
+| 平均耗时 | 13.6s |
+
+结论：精确率高，AI 很少推荐错的公司；主要短板是失败率和召回率。
+上面的准确率、精确率、召回率只统计成功的 39 家，7 家失败的没有计入。
+
+### 3. 问题分类
+
+#### 问题一：模型输出格式出错（7 家失败里的 6 家）
+- 涉及公司：
+  - JSONDecodeError：Jack Wolfskin、Trespass、Fritz Berger、Lieferanten.de、Ortenauer Zeltverleih（报错位置都在输出开头 190–313 字符处）。
+  - ValidationError：Van Ham Tenten & Podia（`match_reasons` 第 0 项应为字符串，模型给了列表）。
+- 现象：这 6 家都抓到了页面（2–5 页），但模型输出解析失败，结果记为失败，tokens 记为 0。
+- 原因：还没看过失败时的原始输出，下面只是推测：模型输出了不合法的 JSON，或输出的字段类型和 schema 不一致。
+- 影响：失败的 6 家里有 3 家是正例（Jack Wolfskin、Trespass、Fritz Berger），直接拉低了端到端召回。
+- 改进方向：
+  1. 失败时保存模型原始输出，先确认真实原因。
+  2. 解析失败后自动重试一次。
+  3. 评估是否改用结构化输出或 JSON 模式，并在 prompt 里强调字段类型。
+
+#### 问题二：抓取不到内容（pages 为 0 或 1）
+- 涉及公司：Tatonka（0 页，直接失败，耗时 55.36s）；Regatta、GO Outdoors、Tiso、Alibaba、Craghoppers（各 1 页）。
+- 现象：
+  - Tatonka：报"没有抓到任何页面"。上一轮用脚本访问 tatonka.com 曾超时，耗时 55s 与重试等待吻合，推测是连接超时，未单独验证。
+  - Regatta、Tiso：只有 1 页，输入 tokens 分别只有 1319 和 2254。Regatta 的风险里写"网页内容极少，仅有标题和页脚"，Tiso 写"网页内容仅为导航菜单"。这两家都是正例，被判 0（40 分、45 分）。
+  - GO Outdoors 虽然只有 1 页，仍得 65 分判对；Alibaba、Craghoppers 判对，是负例。
+- 原因：推测是首页正文主要是导航菜单或需要 JavaScript 渲染，选链接时没有匹配到子页面；尚未逐个核实。
+- 改进方向：沿用上一节的思路：去掉 nav、header、footer，优先取 main 区域；对只抓到 0–1 页的公司单独看原始 HTML；确认确实是 JavaScript 渲染后再考虑 Playwright。
+
+#### 问题三：标注可能有问题
+- Sunncamp（标 1，得 24 分，判 0）：AI 依据网页自称"designing and manufacturing"，判断它是制造商。按 `docs/labeling_guide.md`，自己生产并销售帐篷的属于标 0。当前 notes 写"未见自有工厂"，与网页自称矛盾，需要重新核对官网，再决定是改标还是保留并写明理由。
+  - 如果改标为 0，估算：TP=17 FP=1 FN=4 TN=17，准确率 87.2%，召回率 81.0%，端到端 17/24。这是估算，没有重跑。
+- Reimo（55 分）、OCS Recreatie（58 分）：分数接近阈值，是边界情况。
+  - Reimo：AI 看到主营是房车改装与配件，帐篷占比不明。
+  - OCS：AI 看到"帐篷"类目里其实是遮阳篷和房车篷配件，品类不完全匹配。
+  - 这两家本身是否该标 1，也值得重看：标注时用的是"很可能卖帐篷"，但 AI 读到的页面证据偏弱。
+
+#### 问题四：模型读错输入
+- 涉及公司：OCS Recreatie。
+- 现象：风险里写"目标市场列表中未包含荷兰，需确认是否已覆盖该市场"，而 `icp.json` 明确包含 Netherlands，OCS 就是荷兰公司。
+- 原因：还不清楚。可能是模型没有认真对照画像，也可能是画像在 prompt 中的表达不够显眼。只在 OCS 看到一次。
+- 影响：这条风险不一定直接决定了 58 分，但给判断增加了错误的扣分理由。
+- 改进方向：在 prompt 里把目标市场放在更显眼的位置；评估时抽查风险和画像是否矛盾，看是不是偶发。
+
+#### 问题五：信息不足导致误判
+- 涉及公司：Blackdeer（负例，得 65 分，判 1，是本次唯一的 FP）。
+- 现象：官网没有写国别和工厂。AI 在风险里写"品牌名与 TikTok/YouTube 渠道暗示亚洲背景，需核实是否为排除条件中的亚洲出口商"，但仍给了 65 分。标注时 notes 写明这条"信息靠外部知识"。
+- 原因：prompt 规则 2a 让"没写自有工厂的品牌商"按可能委托生产的采购方处理，抬高了分数；风险里的提示没有反映到分数上。
+- 改进方向：
+  1. prompt 增加规则：风险里写出"可能有亚洲背景"时，分数上限设为 55（具体数值之后用标注集调）。
+  2. 这类公司本身靠官网很难判断，也可以考虑在标注集里单独标成难例，评估时分开统计。
+
+### 4. 其他观察
+- 22 个成功判断的正例分数：24、40、45、55、58，之后 62 到 72，其中 62–72 有 17 个，68 分最多（8 个）。
+- 分布集中在 62–72，最低的判对的正例是 62 分，只比阈值高 2 分，所以阈值 60 对这个标注集比较敏感。
+- 22 个成功负例里，除 Blackdeer（65）外，最高的是 Vaude 和 Lowe Alpine（都是 45）。如果阈值降到 55：TP=19 FP=1 FN=3 TN=16，精确率 95.0%，召回率 86.4%。
+  - 这是在 46 家上看出来的，样本很小，容易过拟合，只作为之后重跑和扩大标注集时验证的方向，现在不改阈值。
+- 端到端效果：25 个正例里，实际找出 17 个（68%）。其余 8 个：判错 5 个（Sunncamp、Regatta、Tiso、Reimo、OCS），失败 3 个（Jack Wolfskin、Trespass、Fritz Berger）。
+  - 召回率 77.3% 没有把失败的 3 个正例计入，端到端比它低约 9 个百分点。
+- 21 个负例里，判对 16 个，判错 1 个（Blackdeer），失败 4 个（Tatonka、Lieferanten.de、Ortenauer Zeltverleih、Van Ham）。
+
+### 5. 修复计划
+1. 修复模型输出格式问题：保存失败的原始输出，加一次重试，必要时改用结构化输出。优先做，失败率 15.2% 是最大的单项损失。
+2. 核对 Sunncamp 标注：重看官网"designing and manufacturing"的上下文，按标注标准决定标 1 还是 0，必要时顺带重看 Reimo 和 OCS。
+3. 重跑评估，对比失败率：用同一标注集、同一 prompt v2 重跑，看失败是否从 7 降下来，再看指标变化。每次只改一件事，方便归因。
+4. 处理抓取问题和 prompt 规则：
+   - 抓取：Tatonka 的超时、Regatta 和 Tiso 内容过少、nav 文本占位。
+   - prompt：Blackdeer 的亚洲背景降分规则，OCS 的目标市场误读。
+   - 这两部分各做一次评估，不要和第 1 步同时改。
+
+
+## 2026-11-04 模型输出格式问题诊断（v2-diag）
+
+### 做了什么
+- 只诊断，没有加重试，没有改 prompt。
+- llm.py：JSON 解析失败时抛出 `LLMOutputError`，带上原始参数文本和 finish_reason；extractor.py：schema 校验失败时同样抛出该错误。
+- research.py：捕获后把网址、finish_reason、输出 token 数、报错信息、原始文本保存到 `results/raw/{域名}_{时间}.txt`。`results/*` 已被 `.gitignore` 忽略，不会上传。
+- 只重跑上次失败的 6 家：`data/eval_failed.csv`（从 `data/eval_set.csv` 原样复制），运行 `eval.py --data data/eval_failed.csv --tag v2-diag`，明细在 `results/eval_v2-diag_20261104_120540.csv`。
+
+### 结果：6 家里 3 家成功，3 家仍失败
+
+| 公司 | 标注 | 上次 | 这次 |
+| --- | --- | --- | --- |
+| Jack Wolfskin | 1 | JSONDecodeError | 成功，68 分 |
+| Trespass | 1 | JSONDecodeError | 成功，65 分 |
+| Van Ham Tenten & Podia | 0 | ValidationError | 成功，12 分 |
+| Fritz Berger | 1 | JSONDecodeError（第 312 个字符） | 仍失败（第 1387 个字符） |
+| Lieferanten.de | 0 | JSONDecodeError（第 191 个字符） | 仍失败（第 194 个字符） |
+| Ortenauer Zeltverleih | 0 | JSONDecodeError（第 269 个字符） | 仍失败（第 286 个字符） |
+
+- 成功的 3 家合计 TP=2 FP=0 FN=0 TN=1。
+- 这个结果只说明样本小、只跑了两轮：既有随机恢复（3 家），也有连续两轮失败的（3 家）。
+- Lieferanten 和 Ortenauer 两次的出错位置接近，推测是同一种错；上次没有保存原始输出，无法验证。Fritz Berger 这次的出错位置和上次差很多，说明同一家会错在不同地方。
+
+### 三个失败输出具体哪里不合法
+
+| 公司 | finish_reason | 输出 token | 问题 |
+| --- | --- | --- | --- |
+| Fritz Berger | tool_calls | 732 | `evidence` 数组结尾写成 `}],, "confidence"`，多了一个逗号，其余部分合法 |
+| Lieferanten.de | tool_calls | 465 | `"match_reasons": []` 后换行出现 `<parameter name="risks">[...]`，工具调用标记混进了 JSON，本该是 `, "risks": [...]` |
+| Ortenauer Zeltverleih | tool_calls | 612 | `"match_reasons": ` 后面是一整段没有引号、没有方括号的中文，字段类型也不对（应为字符串数组） |
+
+- 不是被截断：三家的 finish_reason 都是 `tool_calls`，输出 token 都远低于 `max_tokens=2000`。
+- 不是 Markdown 符号，也不是引号没转义。
+- 上次的 Van Ham ValidationError（`match_reasons` 第 0 项是列表而不是字符串）这次没复现，原始输出没保存，具体原因无法确认。
+
+### 结论
+- 问题出在模型生成 tool call 参数的阶段：偶发多逗号、混进标记、字段类型错，属于模型输出不稳定。
+- 加大 `max_tokens` 没有用。
+- 重试有一定帮助（6 家恢复了 3 家），但有 3 家连续两轮失败，单靠重试可能不够。
+- 这是基于 6 家、2 轮的小样本，还不能说明哪种错占多数。
+
+### 下一步选项（还没做，需要决定）
+1. 失败后自动重试一次，再统计失败率。
+2. 对常见的格式错误加容错解析，例如去掉多余逗号，或使用 json_repair 一类的库。注意容错会掩盖问题，修复后要记录哪些输出是被修复的。
+3. 试试 DeepSeek 的 JSON 模式或严格工具调用（strict mode），看是否更稳定。
+4. 在完整标注集上重跑 `v2-full` 一致的评估，看失败率从 15.2% 降到多少。每次只改一件事，方便归因。
+
+### 注意
+- 失败时 CSV 里的 `tokens_out` 仍为 0，因为 `research_company` 没有记录失败那次的 token 数，真实数字只在 `results/raw/` 的文件里。
+- `error` 列现在会带上 `(finish_reason=...)`。

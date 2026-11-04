@@ -15,6 +15,19 @@ class LLMResult:
     input_tokens: int
     output_tokens: int
     model: str
+    raw_text: str = ""       # 模型返回的原始参数文本，校验失败时用来诊断
+    finish_reason: str = ""
+
+
+class LLMOutputError(Exception):
+    """模型输出无法解析或不符合 schema。带上原始文本和 finish_reason，便于判断是否被截断。"""
+
+    def __init__(self, summary: str, raw_text: str, finish_reason: str | None, output_tokens: int):
+        self.summary = summary
+        self.raw_text = raw_text
+        self.finish_reason = finish_reason
+        self.output_tokens = output_tokens
+        super().__init__(f"{summary}\nfinish_reason={finish_reason}\n原始输出:\n{raw_text}")
 
 
 def _inline_refs(schema: dict) -> dict:
@@ -60,7 +73,8 @@ def _anthropic(system, user, name, desc, schema, model, max_tokens) -> LLMResult
     block = next((b for b in resp.content if b.type == "tool_use"), None)
     if block is None:
         raise RuntimeError("模型没有返回工具调用")
-    return LLMResult(block.input, resp.usage.input_tokens, resp.usage.output_tokens, model)
+    return LLMResult(block.input, resp.usage.input_tokens, resp.usage.output_tokens, model,
+                     json.dumps(block.input, ensure_ascii=False), resp.stop_reason or "")
 
 
 def _openai_compat(system, user, name, desc, schema, model, max_tokens) -> LLMResult:
@@ -77,5 +91,10 @@ def _openai_compat(system, user, name, desc, schema, model, max_tokens) -> LLMRe
     msg = resp.choices[0].message
     if not msg.tool_calls:
         raise RuntimeError("模型没有返回工具调用")
-    data = json.loads(msg.tool_calls[0].function.arguments)
-    return LLMResult(data, resp.usage.prompt_tokens, resp.usage.completion_tokens, model)
+    raw = msg.tool_calls[0].function.arguments
+    finish_reason = resp.choices[0].finish_reason
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise LLMOutputError(f"JSONDecodeError: {e}", raw, finish_reason, resp.usage.completion_tokens) from e
+    return LLMResult(data, resp.usage.prompt_tokens, resp.usage.completion_tokens, model, raw, finish_reason)
