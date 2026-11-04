@@ -22,3 +22,8 @@ PRICE_OUTPUT = float(os.getenv("PRICE_OUTPUT_PER_MTOK", "0"))
 
 def estimate_cost(input_tokens: int, output_tokens: int) -> float:
     return round((input_tokens * PRICE_INPUT + output_tokens * PRICE_OUTPUT) / 1_000_000, 6)
+
+# 候选公司发现（模块 A）
+SEARCH_PROVIDER = os.getenv("SEARCH_PROVIDER", "tavily")  # 以后换搜索服务只改这里和 search.py
+SEARCH_MAX_RESULTS = int(os.getenv("SEARCH_MAX_RESULTS", "10"))
+DISCOVER_NUM_QUERIES = int(os.getenv("DISCOVER_NUM_QUERIES", "20"))
