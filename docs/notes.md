@@ -396,3 +396,79 @@ v2.1 评估中，prompt 和模型都没变，同一家公司两次分数差过 3
 3. 查 CampuS 的 503 是临时问题还是被拦截。
 4. 继续按修复计划处理抓取内容太少、OCS 目标市场误读（问题四）。
 5. 每次只改一件事，方便归因。
+
+
+## 2026-11-04 模块 A：自动搜索候选公司
+
+### 1. 模块 A 第一步：搜索候选
+
+#### 设计
+- 流程：模型根据 icp.json 生成 20 个多语言搜索词（德、英、荷、波各 5 个，覆盖进口商、批发商、品牌商、零售商和不同叫法）→ Tavily 搜索（每词 10 条）→ 按域名去重（去掉 www，只保留首页）→ 屏蔽名单过滤（`discover.py` 的 `BLOCKED_DOMAINS`，单独一个列表，方便增减）。
+- 每个域名记录被哪些搜索词命中、命中几次（`hit_count`）；在标注集里的域名标出标注。
+- 搜索接口做成可替换：`search.py` 提供统一的 `search(query, max_results)`，`config.py` 用 `SEARCH_PROVIDER` 选服务，以后换别家只改这两处。
+- 选 Tavily 的理由：免费额度每月刷新、不用绑卡；basic 搜索每次 1 credit。调用用官方 REST 接口（`POST https://api.tavily.com/search`，Bearer 认证），通过已有的 httpx，没有新增依赖。
+
+#### 结果
+- 20 个搜索词，原始结果 200 条，去重后 126 个域名，过滤 5 个，剩 121 个候选。成本：20 次搜索（20 credits）；生成搜索词输入 733 / 输出 713 tokens。
+- 候选质量（我粗看标题估的，没有逐个核实）：约 65% 像真客户（户外零售商、品牌商、批发商），约 20% 是无关网站（企业信息库、新闻、比价、评测博客），约 12% 是该排除的（中国工厂、租赁、波兰本地制造商）。
+- 标注集覆盖：24 个正例搜到 8 个（skandika、fritz-berger、bergfreunde、obelink.nl、bever.nl、vrijbuiter.nl、4camping.pl、heimplanet）；另外搜到 1 个负例（lieferanten.de）。
+- 覆盖偏低的原因：
+  1. 标注集偏向知名大品牌和连锁（Jack Wolfskin、Regatta、Cotswold 等），通用搜索词不容易搜出来。
+  2. 按域名匹配：同一公司不同国家域名（如标注集里是 obelink.nl，搜到的还有 obelink.de、obelink.pl）只算一个，其余算没搜到。
+  3. 搜索规模小，只有 20 个词。
+- 注：标注集正例现在是 24 个（Sunncamp 已改标 0），不是最初的 25 个。
+
+### 2. 模块 A 第二步：初筛 + 调研
+
+#### 漏斗设计
+- 便宜的筛选在前，贵的在后：初筛只看域名、标题和摘要（每 20 个候选一批、一次调用，不抓网页）；通过的才交给 `research_company` 抓网页并打分。
+- 初筛的作用是淘汰，不是确认：分为 likely_customer / excluded / irrelevant / unsure，前两类之外，likely_customer 和 unsure 进入调研，确认和打分交给 research。
+- 屏蔽名单补充了 13 个域名（rocketreach.co、tracxn.com、leadiq.com、zoominfo.com、cbinsights.com、mapquest.com、bbb.org、pricespy.co.uk、pricerunner.com、finance.yahoo.com、cnbc.com、businessinsider.com、which.co.uk）：企业信息库、比价、新闻类。这些在初筛前就被去掉，不占初筛成本。
+- 命令行支持 `--candidates` 跳过搜索、直接用已有候选文件，测试时不用重复搜索。
+
+#### 第一次运行结果（--max-research 30，不补位）
+- 过滤后 108 个候选，初筛分类：likely_customer 69、excluded 17、irrelevant 12、unsure 10。
+- 人工复核了 b2b.kingcamp.de 和 westfieldoutdoors.eu：初筛都归为 excluded，两家官网都自述制造商/品牌厂家身份，淘汰正确。dreamercamp、dawnjoint（中国 OEM）和 mycityrent.pl（租赁）也被归为 excluded。
+- 调研 30 家：25 成功、5 失败（都是"没有抓到任何页面"），22 家 60 分以上。
+- 成本（tokens）：初筛输入 14,700 / 输出 3,903；调研输入 170,570 / 输出 16,653；合计 205,826。平均每个 60 分以上客户约 9,355 tokens。搜索调用 0 次（用了已有候选文件）。
+- 成本金额没有统计：.env 没填模型价格，只有 token 数。
+
+#### 命中率 88% 偏乐观的原因
+1. 是在初筛之后的候选上算的：初筛已经把明显不是客户的淘汰了，不能当成"随便搜一个域名有 88% 是客户"。
+2. "60 分以上"是 AI 自己的判断，没有人工核实；而且分数集中在 72、68、62 三档，区分度不够。
+
+#### 观察
+- 同样的候选文件，两次运行初筛分类数量不完全一样（69/17/12/10 vs 68/16/12/12），说明初筛输出有小幅波动。
+
+### 3. 失败补位（今天最后一轮）
+
+#### 问题
+- 大站（decathlon.de、globetrotter.de、bigbuy.eu、8a.pl、baxrecreatieshop.de）抓取失败占掉了调研名额，30 家只拿到 25 家结果。
+- 这几家的失败原因是 HTTP 403，已有的抓取重试之后仍然 403，更像是反爬，不是网络波动。
+
+#### 改动（只改 discover.py，没有动 research.py、extractor.py、fetcher.py、eval.py）
+- 失败的定义：research 结果没有 profile 就算失败。没抓到页面记为 `fetch_failed`，其余记为 `llm_failed`。
+- 失败不占名额，自动补位：按 hit_count 从高到低依次调研，每批只试"还差几家"那么多，直到成功数达到 `--max-research` 或候选用完。
+- 尝试上限：新增 `--max-attempts`，默认是 `--max-research` 的 2 倍；达到上限会提示"已达尝试上限"。
+- leads 文件新增 `status`（researched / fetch_failed / llm_failed / screened_out / not_researched）和 `fail_reason` 列；fetch_failed 的原因末尾加"（建议人工查看官网）"。排序：researched 按分数从高到低，然后失败，然后 not_researched，最后 screened_out。
+
+#### 结果（同一个候选文件，--max-research 30）
+- 过滤后 108 个，初筛 likely_customer 68 / excluded 16 / irrelevant 12 / unsure 12，通过 80 个。
+- 成功调研 30 家，尝试 38 家，补位 8 家；失败 8 家：抓取失败 7，模型输出失败 1。没有触到尝试上限（60）。
+- 60 分以上 28 家（占成功的 93%）。最高分 newheights.co.uk（82，补位里的）。
+- 补位的 8 家：zeltespezialist.de 62、hababv.de 42、campingworld.co.uk 抓取失败（403）、newheights.co.uk 82、inter-leisure-outdoors.co.uk 62、leisuremegastore.co.uk 68、attwoolls.co.uk 68、vango.co.uk 68。
+- 失败原因：globetrotter.de、8a.pl、bigbuy.eu、decathlon.de、baxrecreatieshop.de、campingworld.co.uk 都是 HTTP 403；campingwagner.de 是 ReadTimeout（已重试 2 次）；nordisk.de 是 APIConnectionError（网络连接错误）。
+- 成本（tokens）：初筛输入 14,700 / 输出 3,876；调研输入 207,253 / 输出 20,775；合计 246,604。平均每个 60 分以上客户约 8,807 tokens。
+
+#### 注意
+- 7 个抓取失败里 6 个是 403，基本不能靠重试解决；campingwagner.de 是超时，稍后重试可能成功。
+- nordisk.de 的连接错误不是模型输出格式问题，但现在被归入 `llm_failed`；归类不够精确。
+- 这一轮的改动还没有提交 git。
+
+### 4. 待办
+- 填写 DeepSeek 价格，统计实际成本（金额）。
+- 检查初筛淘汰（excluded / irrelevant）的候选里有没有误删的真客户。
+- 人工核实高分客户，算出真实准确率，重点看 coody-camping（初筛 unsure，72 分，可能自产）、benross（自有 Milestone 帐篷品牌，可能部分自产）、heimplanet（初筛提醒可能自产）。
+- 分数集中在 72、68、62 三档，区分度不够，等做分级时一起改。
+- 分级方案等外贸朋友反馈：阿里 L1–L4 是按采购实力分层，和我们按匹配度的 A/B/C 是两个维度。
+- Git：之前有两次推送因 GitHub 服务器错误失败，后来已重新推送成功，模块 A 前两步的提交都已在远程；失败补位这一轮的 discover.py 改动还没提交。

@@ -219,11 +219,33 @@ def prescreen(icp: dict, cands: list[dict], batch_size: int, workers: int) -> tu
     return in_tok, out_tok
 
 
-def research_all(icp: ICP, cands: list[dict], workers: int) -> None:
-    with ThreadPoolExecutor(workers) as ex:
-        results = list(ex.map(lambda c: research_company(c["homepage"], icp), cands))
-    for c, res in zip(cands, results):
-        c["result"] = res
+def classify_result(res) -> tuple[str, str]:
+    """返回 (status, fail_reason)。没有 profile 就算失败：没抓到页面是 fetch_failed，其余是 llm_failed。"""
+    if res.profile:
+        return "researched", ""
+    reason = res.error or "未知错误"
+    if res.fetch_errors:
+        reason += "；抓取错误：" + " / ".join(res.fetch_errors[:3])
+    if not res.pages_fetched:
+        return "fetch_failed", reason + "（建议人工查看官网）"
+    return "llm_failed", reason
+
+
+def research_with_backfill(icp: ICP, queue: list[dict], target: int, max_attempts: int, workers: int) -> int:
+    """按顺序调研，直到成功数达到 target 或尝试数达到 max_attempts。每批只试"还差几家"那么多，失败的自动由下一批补位。
+    结果写进每个候选的 result/status/fail_reason，返回尝试总数。"""
+    ok = attempted = 0
+    while ok < target and attempted < max_attempts and attempted < len(queue):
+        n = min(target - ok, max_attempts - attempted)
+        batch = queue[attempted:attempted + n]
+        with ThreadPoolExecutor(workers) as ex:
+            results = list(ex.map(lambda c: research_company(c["homepage"], icp), batch))
+        for c, res in zip(batch, results):
+            c["result"] = res
+            c["status"], c["fail_reason"] = classify_result(res)
+            ok += c["status"] == "researched"
+        attempted += len(batch)
+    return attempted
 
 
 def lead_row(c: dict) -> dict:
@@ -232,6 +254,7 @@ def lead_row(c: dict) -> dict:
     return {
         "domain": c["domain"], "homepage": c["homepage"],
         "prescreen_label": c["prescreen_label"], "prescreen_reason": c["prescreen_reason"],
+        "status": c["status"], "fail_reason": c.get("fail_reason", ""),
         "score": p.match_score if p else "",
         "business_type": p.business_type if p else "",
         "confidence": p.confidence if p else "",
@@ -248,12 +271,15 @@ def main():
     ap.add_argument("--icp", default="icp.json")
     ap.add_argument("--candidates", help="已有的 candidates_*.csv；给了就跳过搜索")
     ap.add_argument("--max-research", type=int, default=30, help="最多深度调研多少家（按 hit_count 从高到低）")
+    ap.add_argument("--max-attempts", type=int, default=None,
+                    help="最多尝试调研多少家（含失败的），默认是 --max-research 的 2 倍")
     ap.add_argument("--threshold", type=int, default=60, help="评分 >= 阈值视为潜在客户")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--batch-size", type=int, default=20, help="初筛每批处理的候选数")
     args = ap.parse_args()
     icp_dict = json.loads(Path(args.icp).read_text(encoding="utf-8"))
     icp = load_icp(args.icp)
+    max_attempts = args.max_attempts or args.max_research * 2
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     search_calls = q_in = q_out = 0
@@ -278,31 +304,37 @@ def main():
     # 深度调研（hit_count 从高到低，sorted 稳定，同分保持原顺序）
     passed = sorted([c for c in cands if c["prescreen_label"] in PASS_LABELS],
                     key=lambda c: -c["hit_count"])
-    to_research = passed[:args.max_research]
-    print(f"\n通过初筛 {len(passed)} 个，调研前 {len(to_research)} 个 ...")
-    research_all(icp, to_research, args.workers)
+    print(f"\n通过初筛 {len(passed)} 个，目标成功调研 {args.max_research} 家（最多尝试 {max_attempts} 家）...")
+    attempted = research_with_backfill(icp, passed, args.max_research, max_attempts, args.workers)
+    for c in cands:
+        if "status" not in c:
+            c["status"] = "not_researched" if c["prescreen_label"] in PASS_LABELS else "screened_out"
 
-    ok = [c for c in to_research if c["result"].profile]
-    failed = len(to_research) - len(ok)
+    tried = [c for c in cands if "result" in c]
+    ok = [c for c in tried if c["status"] == "researched"]
+    n_fetch = sum(c["status"] == "fetch_failed" for c in tried)
+    n_llm = sum(c["status"] == "llm_failed" for c in tried)
     hits = [c for c in ok if c["result"].profile.match_score >= args.threshold]
-    r_in = sum(c["result"].input_tokens for c in to_research)
-    r_out = sum(c["result"].output_tokens for c in to_research)
+    r_in = sum(c["result"].input_tokens for c in tried)
+    r_out = sum(c["result"].output_tokens for c in tried)
+    if len(ok) < args.max_research:
+        reason = "已达尝试上限" if attempted >= max_attempts else "候选已用完"
+        print(f"注意：成功调研只有 {len(ok)} 家，未达目标 {args.max_research}（{reason}）")
 
-    # 输出：调研过的按分数从高到低，其后是未调研的候选
-    def sort_key(c):
-        res = c.get("result")
-        return -(res.profile.match_score) if res and res.profile else 1
-    researched = sorted(to_research, key=sort_key)
-    rest = [c for c in cands if "result" not in c]
+    # 输出顺序：researched 按分数从高到低 → 失败 → not_researched → screened_out
+    order = {"researched": 0, "fetch_failed": 1, "llm_failed": 1, "not_researched": 2, "screened_out": 3}
+    cands.sort(key=lambda c: (order[c["status"]],
+                              -c["result"].profile.match_score if c["status"] == "researched" else 0))
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUT_DIR / f"leads_{ts}.csv"
-    write_csv(path, ["domain", "homepage", "prescreen_label", "prescreen_reason", "score", "business_type",
-                     "confidence", "country", "reasons", "emails", "error"],
-              [lead_row(c) for c in researched + rest])
+    write_csv(path, ["domain", "homepage", "prescreen_label", "prescreen_reason", "status", "fail_reason",
+                     "score", "business_type", "confidence", "country", "reasons", "emails", "error"],
+              [lead_row(c) for c in cands])
 
     total_tok = q_in + q_out + p_in + p_out + r_in + r_out
     print("\n=== 结果 ===")
-    print(f"调研 {len(to_research)} 家：成功 {len(ok)}，失败 {failed}")
+    print(f"成功调研 {len(ok)} 家；尝试 {attempted} 家；补位 {max(0, attempted - args.max_research)} 家；"
+          f"失败：抓取失败 {n_fetch}，模型输出失败 {n_llm}")
     print(f"{args.threshold} 分以上：{len(hits)} 家" + (f"（命中率 {len(hits) / len(ok):.0%}）" if ok else ""))
     print(f"成本：搜索调用 {search_calls} 次；搜索词 tokens in={q_in}/out={q_out}；"
           f"初筛 tokens in={p_in}/out={p_out}；调研 tokens in={r_in}/out={r_out}；总计 {total_tok}")
